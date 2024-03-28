@@ -57,6 +57,9 @@ pthread_cond_t jpeg_cond;
 pthread_mutex_t jpeg_mutex;
 pthread_mutex_t clients_mutex;
 
+struct snapshot_t snapshot_buf[2];
+int current_buf = 0;
+
 
     /* local functions */
 
@@ -485,6 +488,11 @@ int main(int argc, char *argv[]) {
             }
 
             DEBUG("input: jpeg buffer ready with %d bytes", jpeg_size);
+
+            int bufno = (current_buf + 1) % 2;
+            memcpy(snapshot_buf[bufno].buf, jpeg_buf, jpeg_size);
+            snapshot_buf[bufno].size = jpeg_size;
+            __atomic_store_n(&current_buf, bufno, __ATOMIC_RELEASE);
 
             /* set the ready flag and notify all client threads about it */
             for (i = 0; i < num_clients; i++) {

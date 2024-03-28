@@ -34,12 +34,20 @@
 #define MIN(a, b)                       ((a) < (b) ? (a) : (b))
 #define MAX(a, b)                       ((a) > (b) ? (a) : (b))
 
+struct snapshot_t {
+  int size;
+  char buf[10* 1024 * 1024];
+};
+
 extern int                              log_level;
 extern char                             jpeg_buf[];
 extern int                              jpeg_size;
 extern int                              running;
 extern pthread_cond_t                   jpeg_cond;
 extern pthread_mutex_t                  jpeg_mutex;
+extern struct snapshot_t                snapshot_buf[];
+extern int                              current_buf;
+
 
 
 char *                                  str_timestamp();

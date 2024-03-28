@@ -56,6 +56,16 @@ const char *MULTIPART_HEADER =
         "Content-Type: image/jpeg\r\n"
         "Content-Length: ";
 
+const char *RESPONSE_OK_JPEG =
+        "HTTP/1.1 200 OK\r\n"
+        "Server: streamEye/%s\r\n"
+        "Connection: close\r\n"
+        "Max-Age: 0\r\n"
+        "Expires: 0\r\n"
+        "Cache-Control: no-cache, private\r\n"
+        "Pragma: no-cache\r\n"
+        "Content-Type: image/jpeg\r\n"
+        "Content-Length: %d\r\n\r\n";
 
 static int          read_request(client_t *client);
 static int          write_to_client(client_t *client, char *buf, int size);
@@ -197,6 +207,16 @@ int write_response_ok_header(client_t *client) {
     return r;
 }
 
+int write_response_ok_image(client_t* client, char* jpeg, int jpeg_size) {
+  char * data = malloc(strlen(RESPONSE_OK_JPEG) + 16);
+  sprintf(data, RESPONSE_OK_JPEG, STREAM_EYE_VERSION, jpeg_size);
+  int r = write_to_client(client, data, strlen(data));
+  free(data);
+  /* return r; */
+  int r2 = write_to_client(client, client->jpeg_tmp_buf, client->jpeg_tmp_buf_size);
+  return r+r2;
+}
+
 int write_response_auth_basic_header(client_t *client) {
     char *realm = get_auth_realm();
     char *data = malloc(strlen(RESPONSE_BASIC_AUTH_HEADER_TEMPLATE) + 16 + strlen(realm));
@@ -223,6 +243,42 @@ int write_multipart_header(client_t *client, int jpeg_size) {
     snprintf(size_str, 16, "%d\r\n\r\n", jpeg_size);
 
     return write_to_client(client, size_str, strlen(size_str));
+}
+
+void handle_client_snapshot(client_t* client) {
+  int bufno = __atomic_load_n(&current_buf, __ATOMIC_ACQUIRE);
+  printf("handling client snapshot. bufno: %d\n", bufno);
+  int jpeg_size = snapshot_buf[bufno].size;
+  if (jpeg_size > client->jpeg_tmp_buf_max_size) {
+    client->jpeg_tmp_buf_max_size = jpeg_size * 2;
+    client->jpeg_tmp_buf = realloc(client->jpeg_tmp_buf, client->jpeg_tmp_buf_max_size);
+  }
+  memcpy(client->jpeg_tmp_buf, snapshot_buf[bufno].buf, jpeg_size);
+  client->jpeg_tmp_buf_size = jpeg_size;
+
+  write_response_ok_image(client, client->jpeg_tmp_buf, jpeg_size);
+
+
+  /* sprintf(path, "%s/%s", getenv("HOME"), client->uri + 8); */
+  /* if(0 == access(path, R_OK)) { */
+  /*   int fr = open(path, O_RDONLY); */
+  /*   if(fr != -1) { */
+  /*     ssize_t bytes_read = read(fr, client->jpeg_tmp_buf, client->jpeg_tmp_buf_size); */
+  /*     printf("read %d bytes\n", bytes_read); */
+  /*     if(bytes_read != -1) { */
+  /*       client->jpeg_tmp_buf_size = bytes_read; */
+  /*       write_multipart_header(client, client->jpeg_tmp_buf_size); */
+  /*       write_to_client(client, client->jpeg_tmp_buf, client->jpeg_tmp_buf_size); */
+  /*       write_multipart_header(client, client->jpeg_tmp_buf_size); */
+  /*     } */
+  /*   } else { */
+  /*     printf("could not open file %s\n", path); */
+  /*   } */
+  /*   close(fr); */
+  /* } else { */
+  /*     printf("could not access file %s\n", path); */
+  /* } */
+  return;
 }
 
 void handle_client(client_t *client) {
@@ -264,6 +320,11 @@ void handle_client(client_t *client) {
         cleanup_client(client);
         
         return;
+    }
+
+    printf("client->uri: %s\n", client->uri);
+    if(memcmp(client->uri, "/snapshot", 9) == 0) {
+      return handle_client_snapshot(client);
     }
 
     client->last_frame_time = get_now();
